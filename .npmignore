@@ -1,0 +1,9 @@
+test/
+examples/
+src/
+tsconfig.json
+.github/
+CONTRIBUTING.md
+assets/social-preview.png
+*.tgz
+.DS_Store

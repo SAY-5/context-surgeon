@@ -33,15 +33,20 @@
   "files": [
     "bin/",
     "dist/",
+    "assets/fonts/",
+    "assets/hero.png",
     "skill-package/",
-    "assets/"
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
