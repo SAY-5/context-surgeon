@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { formatCount, modeBadge } from '../tokens/index.js';
-import type { Bucket, Report, SourceCount } from '../report/compose.js';
+import type { Bucket, Report } from '../report/compose.js';
+import { layoutSegments } from './layout.js';
 
 const PALETTE: Record<Bucket, string> = {
   system: '#6e7681',
@@ -13,16 +14,6 @@ const PALETTE: Record<Bucket, string> = {
   room: '#30363d',
 };
 
-const BUCKET_ORDER: Bucket[] = [
-  'system',
-  'user-claude',
-  'project-claude',
-  'imports',
-  'rules',
-  'auto-memory',
-  'skills',
-];
-
 const BUCKET_LABEL: Record<Bucket, string> = {
   system: 'sys prompt',
   'user-claude': '~/CLAUDE.md',
@@ -34,48 +25,8 @@ const BUCKET_LABEL: Record<Bucket, string> = {
   room: 'room for your prompt',
 };
 
-interface BucketRow {
-  bucket: Bucket;
-  tokens: number;
-  count: number;
-}
-
-function rollUp(sources: SourceCount[]): BucketRow[] {
-  const map = new Map<Bucket, BucketRow>();
-  for (const s of sources) {
-    const row = map.get(s.bucket) ?? { bucket: s.bucket, tokens: 0, count: 0 };
-    row.tokens += s.tokens;
-    row.count += 1;
-    map.set(s.bucket, row);
-  }
-  const rows: BucketRow[] = [];
-  for (const b of BUCKET_ORDER) {
-    const row = map.get(b);
-    if (row && row.tokens > 0) rows.push(row);
-  }
-  return rows;
-}
-
-function allocateWidths(
-  segments: Array<{ tokens: number }>,
-  totalWindow: number,
-  barWidth: number,
-): number[] {
-  const raw = segments.map(s => (s.tokens / totalWindow) * barWidth);
-  const widths = raw.map(x => Math.max(1, Math.round(x)));
-  let sum = widths.reduce((a, b) => a + b, 0);
-  if (sum > barWidth) {
-    while (sum > barWidth) {
-      const idx = widths.indexOf(Math.max(...widths));
-      widths[idx]! -= 1;
-      sum -= 1;
-    }
-  }
-  return widths;
-}
-
-function padToCols(left: string, right: string, width: number, stripWidth: (s: string) => number): string {
-  const gap = Math.max(1, width - stripWidth(left) - stripWidth(right));
+function padToCols(left: string, right: string, width: number, widthFn: (s: string) => number): string {
+  const gap = Math.max(1, width - widthFn(left) - widthFn(right));
   return `${left}${' '.repeat(gap)}${right}`;
 }
 
@@ -83,6 +34,7 @@ const ANSI_RE = /\x1b\[[0-9;]*m/g;
 export function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
 }
+
 function visibleLength(s: string): number {
   return stripAnsi(s).length;
 }
@@ -94,51 +46,42 @@ export interface RenderOpts {
 export function renderTerminal(report: Report, opts: RenderOpts = {}): string {
   const width = Math.max(60, opts.width ?? process.stdout.columns ?? 80);
   const barWidth = width - 2;
-  const used = report.sources.reduce((s, x) => s + x.tokens, 0);
-  const roomTokens = Math.max(0, report.contextWindow - used);
-
-  const rows = rollUp(report.sources);
-  const segments = [
-    ...rows.map(r => ({ bucket: r.bucket, tokens: r.tokens })),
-    { bucket: 'room' as Bucket, tokens: roomTokens },
-  ];
-  const widths = allocateWidths(segments, report.contextWindow, barWidth);
+  const segs = layoutSegments(report, barWidth, { minFilledSegmentWidth: 1 });
 
   const lines: string[] = [];
 
-  // title row
   const title = chalk.hex('#e6edf3').bold('Your context, before you type');
-  const totalStr = `${formatCount(report.total, report.mode)} / ${formatCount(report.contextWindow, report.mode)} tokens  ${chalk.hex('#8b949e')(modeBadge(report.mode))}`;
-  const totalColored = chalk.hex('#e6edf3')(`${formatCount(report.total, report.mode)}`) +
+  const totalColored =
+    chalk.hex('#e6edf3')(`${formatCount(report.total, report.mode)}`) +
     chalk.hex('#6e7681')(` / ${formatCount(report.contextWindow, report.mode)} tokens  `) +
     chalk.hex('#8b949e')(modeBadge(report.mode));
-  void totalStr;
   lines.push(padToCols(title, totalColored, width, visibleLength));
   lines.push('');
 
-  // bar row
+  // bar
   let bar = '';
-  segments.forEach((seg, i) => {
-    const w = widths[i]!;
+  for (const seg of segs) {
+    if (seg.width <= 0) continue;
     const color = PALETTE[seg.bucket];
     const ch = seg.bucket === 'room' ? '░' : '█';
-    bar += chalk.hex(color)(ch.repeat(w));
-  });
+    bar += chalk.hex(color)(ch.repeat(seg.width));
+  }
   lines.push(` ${bar}`);
   lines.push('');
 
-  // legend: two rows, three per row
-  const legendItems = [
-    ...rows.map(r => ({
-      bucket: r.bucket,
-      label: `${BUCKET_LABEL[r.bucket]} (${r.count})`,
-      tokens: r.tokens,
-    })),
-    { bucket: 'room' as Bucket, label: 'room for your prompt', tokens: roomTokens },
-  ];
-  const legendCell = (it: { bucket: Bucket; label: string; tokens: number }): string => {
+  // legend, 3 per row
+  const legendItems: Array<{ bucket: Bucket; label: string; tokens: number; count: number }> = segs
+    .filter(s => s.tokens > 0)
+    .map(s => ({
+      bucket: s.bucket,
+      label: s.bucket === 'room' ? 'room for your prompt' : BUCKET_LABEL[s.bucket],
+      tokens: s.tokens,
+      count: s.count,
+    }));
+  const legendCell = (it: { bucket: Bucket; label: string; tokens: number; count: number }): string => {
     const swatch = chalk.hex(PALETTE[it.bucket])('■');
-    const name = chalk.hex('#e6edf3')(it.label);
+    const suffix = it.bucket === 'room' || it.count === 0 ? '' : ` (${it.count})`;
+    const name = chalk.hex('#e6edf3')(`${it.label}${suffix}`);
     const cnt = chalk.hex('#8b949e')(formatCount(it.tokens, report.mode));
     return `${swatch} ${name}  ${cnt}`;
   };
@@ -153,7 +96,6 @@ export function renderTerminal(report: Report, opts: RenderOpts = {}): string {
   }
   lines.push('');
 
-  // findings
   if (report.findings.length === 0) {
     lines.push(chalk.hex('#8b949e')(' [ ] no findings yet — analyzers ship in next commit batch.'));
   } else {

@@ -29,7 +29,7 @@ describe('render/terminal', () => {
     expect(out).toMatchInlineSnapshot(`
       "Your context, before you type                          10K / 200K tokens  [±est]
 
-       █████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+       ███████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
        ■ sys prompt (1)  1.0K    ■ project CLAUDE.md (2)  4.5K ■ .claude/rules/ (2)  ~720
        ■ skill metadata (2)  ~380 ■ room for your prompt  193K

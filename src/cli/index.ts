@@ -8,6 +8,8 @@ import { resolveImports } from '../imports/resolver.js';
 import { count, formatCount, modeBadge, preferredMode } from '../tokens/index.js';
 import { compose } from '../report/compose.js';
 import { renderTerminal } from '../render/terminal.js';
+import { renderSVG } from '../render/svg.js';
+import { writeFile } from 'node:fs/promises';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgJsonPath = join(here, '..', '..', 'package.json');
@@ -79,10 +81,23 @@ export async function main(argv: string[]): Promise<number> {
     .command('audit <dir>')
     .description('audit what Claude Code loads for <dir>')
     .option('--json', 'emit the Report as JSON instead of rendering')
+    .option('--svg [path]', 'emit the hero SVG; no path = stdout, path = file')
     .option('--include-home', 'include ~/.claude (off by default)', false)
     .option('--force-offline', 'force offline estimate even when ANTHROPIC_API_KEY is set', false)
     .option('--width <n>', 'terminal width for rendering (auto-detected by default)', v => Number(v))
-    .action(async (dir: string, opts: { json?: boolean; includeHome?: boolean; forceOffline?: boolean; width?: number }) => {
+    .action(async (
+      dir: string,
+      opts: {
+        json?: boolean;
+        svg?: boolean | string;
+        includeHome?: boolean;
+        forceOffline?: boolean;
+        width?: number;
+      },
+    ) => {
+      if (opts.json && opts.svg !== undefined) {
+        throw new Error('--json and --svg are mutually exclusive; pick one output format');
+      }
       const sources = await discover(dir, { includeHome: opts.includeHome });
       const resolved = await Promise.all(
         sources.files.map(async f => resolveImports(parseFile(f))),
@@ -95,6 +110,16 @@ export async function main(argv: string[]): Promise<number> {
       });
       if (opts.json) {
         process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        return;
+      }
+      if (opts.svg !== undefined) {
+        const svg = renderSVG(report);
+        if (typeof opts.svg === 'string') {
+          await writeFile(opts.svg, svg, 'utf8');
+          process.stderr.write(`wrote ${opts.svg}\n`);
+        } else {
+          process.stdout.write(svg);
+        }
         return;
       }
       process.stdout.write(renderTerminal(report, { width: opts.width }));
