@@ -1,4 +1,3 @@
-import { Resvg } from '@resvg/resvg-js';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +35,22 @@ function resolveFontPaths(): string[] {
 }
 
 export async function renderPNG(report: Report, size: PngSize = HERO_SIZE): Promise<Buffer> {
+  // Lazy-load resvg so terminal-only audits work in environments that install
+  // with --omit=optional (Docker minimal, corporate npm configs) and therefore
+  // skip the platform-specific @resvg/resvg-js-<os>-<arch> native binary.
+  let Resvg: typeof import('@resvg/resvg-js').Resvg;
+  try {
+    ({ Resvg } = await import('@resvg/resvg-js'));
+  } catch (err) {
+    const detail = (err as Error)?.message ?? String(err);
+    throw new Error(
+      '@resvg/resvg-js is not installed or its native binary is missing. ' +
+        'It ships as an optional dependency with a platform-specific build; ' +
+        'reinstall without --omit=optional:\n' +
+        '  npm install context-surgeon\n' +
+        `(underlying error: ${detail})`,
+    );
+  }
   const svg = renderSVG(report);
   const fontFiles = resolveFontPaths();
   const resvg = new Resvg(svg, {
