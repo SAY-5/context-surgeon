@@ -5,10 +5,19 @@ import { dirname, join } from 'node:path';
 import { discover } from '../discovery/walker.js';
 import { parseFile } from '../parser/frontmatter.js';
 import { resolveImports } from '../imports/resolver.js';
+import { count, formatCount, modeBadge, preferredMode } from '../tokens/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgJsonPath = join(here, '..', '..', 'package.json');
 const pkg = JSON.parse(await readFile(pkgJsonPath, 'utf8')) as { version: string };
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
 
 export async function main(argv: string[]): Promise<number> {
   const program = new Command();
@@ -62,6 +71,25 @@ export async function main(argv: string[]): Promise<number> {
         }
         process.stdout.write('\n');
       }
+    });
+
+  program
+    .command('tokens <text>')
+    .description('count tokens in <text>; pass - to read stdin')
+    .option('--force-offline', 'force offline estimate even when ANTHROPIC_API_KEY is set', false)
+    .option('--model <model>', 'model to use for exact counts (default: claude-sonnet-4-6)')
+    .action(async (text: string, opts: { forceOffline?: boolean; model?: string }) => {
+      let input = text;
+      if (text === '-') {
+        input = await readStdin();
+      }
+      const mode = opts.forceOffline ? 'estimate' : preferredMode();
+      process.stdout.write(`mode: ${mode}${mode === 'exact' ? ' (ANTHROPIC_API_KEY detected)' : ' (no ANTHROPIC_API_KEY)'}\n`);
+      const result = await count(input, {
+        force: opts.forceOffline ? 'estimate' : undefined,
+        model: opts.model,
+      });
+      process.stdout.write(`${formatCount(result.tokens, result.mode)} tokens  ${modeBadge(result.mode)}\n`);
     });
 
   try {
