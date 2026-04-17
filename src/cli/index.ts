@@ -6,6 +6,8 @@ import { discover } from '../discovery/walker.js';
 import { parseFile } from '../parser/frontmatter.js';
 import { resolveImports } from '../imports/resolver.js';
 import { count, formatCount, modeBadge, preferredMode } from '../tokens/index.js';
+import { compose } from '../report/compose.js';
+import { renderTerminal } from '../render/terminal.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgJsonPath = join(here, '..', '..', 'package.json');
@@ -71,6 +73,31 @@ export async function main(argv: string[]): Promise<number> {
         }
         process.stdout.write('\n');
       }
+    });
+
+  program
+    .command('audit <dir>')
+    .description('audit what Claude Code loads for <dir>')
+    .option('--json', 'emit the Report as JSON instead of rendering')
+    .option('--include-home', 'include ~/.claude (off by default)', false)
+    .option('--force-offline', 'force offline estimate even when ANTHROPIC_API_KEY is set', false)
+    .option('--width <n>', 'terminal width for rendering (auto-detected by default)', v => Number(v))
+    .action(async (dir: string, opts: { json?: boolean; includeHome?: boolean; forceOffline?: boolean; width?: number }) => {
+      const sources = await discover(dir, { includeHome: opts.includeHome });
+      const resolved = await Promise.all(
+        sources.files.map(async f => resolveImports(parseFile(f))),
+      );
+      const mode = opts.forceOffline ? 'estimate' : preferredMode();
+      const report = await compose(resolved, {
+        cwd: sources.cwd,
+        mode,
+        includeHome: !!opts.includeHome,
+      });
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        return;
+      }
+      process.stdout.write(renderTerminal(report, { width: opts.width }));
     });
 
   program
