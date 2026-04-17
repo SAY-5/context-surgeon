@@ -35,6 +35,8 @@ export interface Report {
   systemPromptTokens: number;
 }
 
+export type ComposePhase = 'tokenize' | 'analyze';
+
 export interface ComposeOpts {
   cwd: string;
   mode: Mode;
@@ -42,6 +44,7 @@ export interface ComposeOpts {
   contextWindow?: number;
   systemPromptTokens?: number;
   conflictClassifier?: ConflictClassifier;
+  onProgress?: (phase: ComposePhase, current: number, total: number) => void;
 }
 
 function shortLabel(path: string, cwd: string): string {
@@ -87,9 +90,10 @@ export async function compose(resolved: ResolvedFile[], opts: ComposeOpts): Prom
     label: 'system prompt',
   });
 
-  for (const f of resolved) {
-    const text = textFor(f);
-    if (!text) continue;
+  const tokenizable = resolved.map(f => ({ f, text: textFor(f) })).filter(e => e.text);
+  for (let i = 0; i < tokenizable.length; i++) {
+    const { f, text } = tokenizable[i]!;
+    opts.onProgress?.('tokenize', i, tokenizable.length);
     const { tokens } = await count(text, { force: opts.mode });
     sources.push({
       path: f.path,
@@ -100,14 +104,17 @@ export async function compose(resolved: ResolvedFile[], opts: ComposeOpts): Prom
       label: shortLabel(f.path, opts.cwd),
     });
   }
+  opts.onProgress?.('tokenize', tokenizable.length, tokenizable.length);
 
   const total = sources.reduce((s, x) => s + x.tokens, 0);
 
+  opts.onProgress?.('analyze', 0, 1);
   const findings = await analyze(resolved, {
     cwd: opts.cwd,
     mode: opts.mode,
     conflictClassifier: opts.conflictClassifier,
   });
+  opts.onProgress?.('analyze', 1, 1);
 
   return {
     cwd: opts.cwd,
