@@ -1,4 +1,4 @@
-import { Command, InvalidArgumentError } from 'commander';
+import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
@@ -17,6 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const pkgJsonPath = join(here, '..', '..', 'package.json');
 const pkg = JSON.parse(await readFile(pkgJsonPath, 'utf8')) as { version: string };
 
+// TODO(commit-12): replace with real repo URL before launch.
 const REPO_URL = 'https://github.com/<repo>/context-surgeon';
 
 const HELP_TEXT = `\
@@ -51,13 +52,14 @@ EXIT CODES
 Learn more: ${REPO_URL}
 `;
 
-function parseWidth(raw: string): number {
+function validateWidth(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
   const n = Number.parseInt(raw, 10);
   if (!Number.isInteger(n) || String(n) !== String(raw)) {
-    throw new InvalidArgumentError(`--width must be an integer (got "${raw}")`);
+    throw new Error(`--width must be an integer (got "${raw}")`);
   }
   if (n < 40 || n > 400) {
-    throw new InvalidArgumentError(`--width must be between 40 and 400 (got ${n})`);
+    throw new Error(`--width must be between 40 and 400 (got ${n})`);
   }
   return n;
 }
@@ -96,7 +98,7 @@ interface AuditOpts {
   out?: string;
   includeHome?: boolean;
   forceOffline?: boolean;
-  width?: number;
+  width?: string;
 }
 
 async function runAudit(dir: string | undefined, opts: AuditOpts): Promise<void> {
@@ -111,6 +113,7 @@ async function runAudit(dir: string | undefined, opts: AuditOpts): Promise<void>
   if (formats > 1) {
     throw new Error('--json, --svg, --png, and --out are mutually exclusive; pick one output format');
   }
+  const width = validateWidth(opts.width);
 
   const showSpinner = !opts.json && !opts.svg && !opts.png && !opts.out && process.stderr.isTTY === true;
   const spinner = makeSpinner(showSpinner);
@@ -158,10 +161,13 @@ async function runAudit(dir: string | undefined, opts: AuditOpts): Promise<void>
       process.stderr.write(`wrote ${svgPath}\n`);
       process.stderr.write(`wrote ${pngPath} (${formatBytes(png.length)})\n`);
     } else {
-      process.stdout.write(renderTerminal(report, { width: opts.width }));
+      process.stdout.write(renderTerminal(report, { width }));
     }
 
-    if (report.findings.length > 0) {
+    // Exit 1 only for warning-severity findings (future: critical too, when any
+    // Finding kind uses it); info-severity notes are informational and do not fail CI.
+    const hasBlockingFinding = report.findings.some(f => f.severity === 'warning');
+    if (hasBlockingFinding) {
       process.exitCode = 1;
     }
   } catch (err) {
@@ -200,7 +206,7 @@ export async function main(argv: string[]): Promise<number> {
     .option('--out <dir>', 'write both context-surgeon-hero.{svg,png} into <dir>/')
     .option('--include-home', 'include ~/.claude (off by default)', false)
     .option('--force-offline', 'force offline estimate even when ANTHROPIC_API_KEY is set', false)
-    .option('--width <n>', 'terminal width (40–400; auto-detected by default)', parseWidth)
+    .option('--width <n>', 'terminal width (40–400; auto-detected by default)')
     .action(runAudit);
 
   program

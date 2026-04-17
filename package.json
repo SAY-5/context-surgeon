@@ -1,7 +1,18 @@
 {
   "name": "context-surgeon",
   "version": "0.1.0",
-  "description": "Audit Claude Code context for bloat, clipped skill descriptions, redundant rules, and possible conflicts.",
+  "description": "Audit what Claude Code actually loads into context before you type.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "tokens",
+    "context",
+    "audit",
+    "llm",
+    "cli",
+    "developer-tools"
+  ],
   "type": "module",
   "bin": {
     "context-surgeon": "bin/context-surgeon.mjs"
