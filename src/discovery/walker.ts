@@ -87,6 +87,7 @@ export async function discover(startCwd: string, opts: DiscoverOpts = {}): Promi
       if (dotClaudeMd) collected.push(dotClaudeMd);
       collected.push(...(await globRead(['rules/**/*.md'], dotClaude, scope)));
       collected.push(...(await globRead(['skills/*/SKILL.md'], dotClaude, scope)));
+      collected.push(...(await globRead(['memory/**/*.md'], dotClaude, scope)));
       for (const name of ['settings.json', 'settings.local.json']) {
         const s = await readIfExists(
           join(dotClaude, name),
@@ -105,6 +106,10 @@ export async function discover(startCwd: string, opts: DiscoverOpts = {}): Promi
     if (existsSync(hc)) {
       collected.push(...(await globRead(['rules/**/*.md'], hc, 'user')));
       collected.push(...(await globRead(['skills/*/SKILL.md'], hc, 'user')));
+      // Auto-memory at ~/.claude/projects/<project-hash>/memory/; the hash
+      // depends on the git repo of cwd, so we scan all project dirs rather
+      // than reimplementing Claude Code's hashing.
+      collected.push(...(await globRead(['projects/*/memory/**/*.md'], hc, 'user')));
       const s = await readIfExists(join(hc, 'settings.json'), 'settings', 'user');
       if (s) collected.push(s);
     }
