@@ -12,3 +12,7 @@ incident, held as one.
 
 Auth is Clerk. Use the RBAC helpers in `packages/auth`; do not roll
 your own session logic.
+
+All user input hits Zod validation at the API boundary. No exceptions.
+If the schema does not match, the request is rejected with a 400 and a
+structured error.

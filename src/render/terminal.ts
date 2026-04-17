@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { formatCount, modeBadge } from '../tokens/index.js';
 import type { Bucket, Report } from '../report/compose.js';
 import { layoutSegments } from './layout.js';
+import { orderedSummaries, totalReclaim } from './findings.js';
 
 const PALETTE: Record<Bucket, string> = {
   system: '#6e7681',
@@ -24,6 +25,8 @@ const BUCKET_LABEL: Record<Bucket, string> = {
   imports: '@imports',
   room: 'room for your prompt',
 };
+
+const MAX_FINDING_LINES = 8;
 
 function padToCols(left: string, right: string, width: number, widthFn: (s: string) => number): string {
   const gap = Math.max(1, width - widthFn(left) - widthFn(right));
@@ -58,7 +61,6 @@ export function renderTerminal(report: Report, opts: RenderOpts = {}): string {
   lines.push(padToCols(title, totalColored, width, visibleLength));
   lines.push('');
 
-  // bar
   let bar = '';
   for (const seg of segs) {
     if (seg.width <= 0) continue;
@@ -69,7 +71,7 @@ export function renderTerminal(report: Report, opts: RenderOpts = {}): string {
   lines.push(` ${bar}`);
   lines.push('');
 
-  // legend, 3 per row
+  // legend
   const legendItems: Array<{ bucket: Bucket; label: string; tokens: number; count: number }> = segs
     .filter(s => s.tokens > 0)
     .map(s => ({
@@ -96,17 +98,51 @@ export function renderTerminal(report: Report, opts: RenderOpts = {}): string {
   }
   lines.push('');
 
+  // findings
   if (report.findings.length === 0) {
-    lines.push(chalk.hex('#8b949e')(' [ ] no findings yet — analyzers ship in next commit batch.'));
-  } else {
-    const warn = report.findings.filter(f => f.severity === 'warning').length;
-    const info = report.findings.filter(f => f.severity === 'info').length;
-    lines.push(
-      chalk.hex('#f87171')(` [!] ${warn} warning${warn === 1 ? '' : 's'}`) +
-        chalk.hex('#8b949e')(`, ${info} note${info === 1 ? '' : 's'}`),
-    );
+    lines.push(chalk.hex('#8b949e')(' [ ] no findings — your context looks clean.'));
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  const summaries = orderedSummaries(report.findings);
+  const warn = summaries.filter(s => s.severity === 'warning').length;
+  const info = summaries.filter(s => s.severity === 'info').length;
+  const reclaim = totalReclaim(report.findings);
+
+  const header =
+    chalk.hex('#f87171')(` [!] ${warn} warning${warn === 1 ? '' : 's'}`) +
+    chalk.hex('#8b949e')(`, ${info} note${info === 1 ? '' : 's'}`) +
+    chalk.hex('#8b949e')(' — ') +
+    chalk.hex('#34d399')(`${formatCount(reclaim, report.mode)} tokens reclaimable`);
+  lines.push(header);
+  lines.push('');
+
+  const visible = summaries.slice(0, MAX_FINDING_LINES);
+  const impactColWidth = 14;
+  for (const s of visible) {
+    const marker = s.severity === 'warning' ? chalk.hex('#f87171')('▸') : chalk.hex('#6e7681')('·');
+    const text = chalk.hex('#e6edf3')(s.line);
+    const impact = s.impact > 0
+      ? chalk.hex('#8b949e')(`${formatCount(s.impact, report.mode)} tokens`)
+      : chalk.hex('#6e7681')('—');
+    const left = ` ${marker} ${text}`;
+    const leftLen = visibleLength(left);
+    const available = Math.max(1, width - leftLen - impactColWidth);
+    const line = `${left}${' '.repeat(available)}${padRight(impact, impactColWidth)}`;
+    lines.push(line);
+  }
+  if (summaries.length > MAX_FINDING_LINES) {
+    const more = summaries.length - MAX_FINDING_LINES;
+    lines.push(chalk.hex('#6e7681')(`   … and ${more} more`));
   }
   lines.push('');
 
   return lines.join('\n');
+}
+
+function padRight(s: string, width: number): string {
+  const len = stripAnsi(s).length;
+  if (len >= width) return s;
+  return ' '.repeat(width - len) + s;
 }

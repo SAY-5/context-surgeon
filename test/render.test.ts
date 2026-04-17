@@ -34,7 +34,7 @@ describe('render/terminal', () => {
        ■ sys prompt (1)  1.0K    ■ project CLAUDE.md (2)  4.5K ■ .claude/rules/ (2)  ~720
        ■ skill metadata (2)  ~380 ■ room for your prompt  193K
 
-       [ ] no findings yet — analyzers ship in next commit batch.
+       [ ] no findings — your context looks clean.
       "
     `);
   });
@@ -47,7 +47,7 @@ describe('render/terminal', () => {
       // chalk checks NO_COLOR at module load, not per call, so this is a loose check
       // that rendered output is still a valid string; ANSI-free mode is covered by stripAnsi snapshot.
       expect(out).toContain('Your context, before you type');
-      expect(out).toContain('no findings yet');
+      expect(out).toContain('no findings');
     } finally {
       if (origNoColor === undefined) delete process.env.NO_COLOR;
       else process.env.NO_COLOR = origNoColor;

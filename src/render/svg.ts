@@ -1,6 +1,7 @@
 import { formatCount, modeBadge } from '../tokens/index.js';
 import type { Bucket, Report } from '../report/compose.js';
 import { layoutSegments, type SegmentLayout } from './layout.js';
+import { orderedSummaries, totalReclaim } from './findings.js';
 
 const PALETTE: Record<Bucket, string> = {
   system: '#6e7681',
@@ -33,7 +34,12 @@ const BAR_H = 56;
 
 const TITLE_Y = 240;
 const LEGEND_Y = 460;
-const FINDINGS_Y = 560;
+const FINDINGS_HEADER_Y = 555;
+const FINDINGS_GRID_Y = 595;
+const FINDINGS_COL_W = 400;
+const FINDINGS_ROW_H = 40;
+const FINDINGS_MAX_ROWS = 6;
+const FINDINGS_MAX_VISIBLE = FINDINGS_MAX_ROWS * 3;
 
 const FONT_INTER = 'Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif';
 const FONT_MONO = 'JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -41,6 +47,8 @@ const FONT_MONO = 'JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospac
 const TEXT_PRIMARY = '#e6edf3';
 const TEXT_SECONDARY = '#8b949e';
 const TEXT_MUTED = '#6e7681';
+const COLOR_WARNING = '#f87171';
+const COLOR_RECLAIM = '#34d399';
 
 function geomSegments(report: Report): SegmentLayout[] {
   const segs = layoutSegments(report, BAR_W, { minFilledSegmentWidth: 4 });
@@ -62,6 +70,10 @@ function escape(s: string): string {
 
 function approxCharWidth(fontPx: number): number {
   return fontPx * 0.58;
+}
+
+function truncate(s: string, maxChars: number): string {
+  return s.length <= maxChars ? s : `${s.slice(0, maxChars - 1)}…`;
 }
 
 interface Placed {
@@ -171,11 +183,63 @@ function renderLegend(segs: SegmentLayout[], report: Report): string {
 
 function renderFindings(report: Report): string {
   if (report.findings.length === 0) {
-    return `    <text x="${BAR_X}" y="${FINDINGS_Y}" font-family="${FONT_INTER}" font-size="13" fill="${TEXT_MUTED}">[ ] no findings yet — analyzers ship in next commit batch.</text>`;
+    return `    <text x="${BAR_X}" y="${FINDINGS_HEADER_Y}" font-family="${FONT_INTER}" font-size="14" fill="${TEXT_MUTED}">[ ] no findings — your context looks clean.</text>`;
   }
-  const warn = report.findings.filter(f => f.severity === 'warning').length;
-  const info = report.findings.filter(f => f.severity === 'info').length;
-  return `    <text x="${BAR_X}" y="${FINDINGS_Y}" font-family="${FONT_INTER}" font-size="13" fill="#f87171">[!] ${warn} warning${warn === 1 ? '' : 's'}<tspan fill="${TEXT_SECONDARY}">, ${info} note${info === 1 ? '' : 's'}</tspan></text>`;
+  const summaries = orderedSummaries(report.findings);
+  const warn = summaries.filter(s => s.severity === 'warning').length;
+  const info = summaries.filter(s => s.severity === 'info').length;
+  const reclaim = totalReclaim(report.findings);
+  const reclaimStr = formatCount(reclaim, report.mode);
+
+  const parts: string[] = [];
+  parts.push(
+    `    <text x="${BAR_X}" y="${FINDINGS_HEADER_Y}" font-family="${FONT_INTER}" font-size="14" font-weight="500">` +
+      `<tspan fill="${COLOR_WARNING}">[!] ${warn} warning${warn === 1 ? '' : 's'}</tspan>` +
+      `<tspan fill="${TEXT_SECONDARY}">, ${info} note${info === 1 ? '' : 's'}</tspan>` +
+      `<tspan fill="${TEXT_MUTED}"> — </tspan>` +
+      `<tspan fill="${COLOR_RECLAIM}">${escape(reclaimStr)} tokens reclaimable</tspan>` +
+      `</text>`,
+  );
+
+  const visible = summaries.slice(0, FINDINGS_MAX_VISIBLE);
+  const shortFont = 12;
+  const maxChars = Math.floor((FINDINGS_COL_W - 40) / approxCharWidth(shortFont));
+
+  for (let i = 0; i < visible.length; i++) {
+    const s = visible[i]!;
+    const row = Math.floor(i / 3);
+    const col = i % 3;
+    const cellX = BAR_X + col * FINDINGS_COL_W;
+    const cellY = FINDINGS_GRID_Y + row * FINDINGS_ROW_H;
+    const dotColor = s.severity === 'warning' ? COLOR_WARNING : TEXT_MUTED;
+    const cx = cellX + 8;
+    const cy = cellY + 6;
+    const textX = cellX + 22;
+    const textYTop = cellY + 10;
+    const textYBottom = cellY + 28;
+
+    const impactStr = s.impact > 0 ? `${formatCount(s.impact, report.mode)} tokens` : '—';
+    const shortText = truncate(s.short, maxChars);
+
+    parts.push(
+      `    <circle cx="${cx}" cy="${cy}" r="4" fill="${dotColor}" />`,
+    );
+    parts.push(
+      `    <text x="${textX}" y="${textYTop}" font-family="${FONT_INTER}" font-size="12" fill="${TEXT_PRIMARY}">${escape(shortText)}</text>`,
+    );
+    parts.push(
+      `    <text x="${textX}" y="${textYBottom}" font-family="${FONT_MONO}" font-size="11" fill="${s.severity === 'warning' ? COLOR_RECLAIM : TEXT_MUTED}">${escape(impactStr)}</text>`,
+    );
+  }
+  if (summaries.length > FINDINGS_MAX_VISIBLE) {
+    const more = summaries.length - FINDINGS_MAX_VISIBLE;
+    const trailRow = Math.ceil(visible.length / 3);
+    const trailY = FINDINGS_GRID_Y + trailRow * FINDINGS_ROW_H;
+    parts.push(
+      `    <text x="${BAR_X}" y="${trailY}" font-family="${FONT_INTER}" font-size="12" fill="${TEXT_MUTED}">… and ${more} more</text>`,
+    );
+  }
+  return parts.join('\n');
 }
 
 export function renderSVG(report: Report): string {
@@ -184,7 +248,8 @@ export function renderSVG(report: Report): string {
   const windowStr = formatCount(report.contextWindow, report.mode);
   const badge = modeBadge(report.mode);
   const sourceCount = report.sources.length;
-  const ariaLabel = `Claude Code context: ${totalStr} of ${windowStr} tokens used by ${sourceCount} always-on source${sourceCount === 1 ? '' : 's'}`;
+  const findingsCount = report.findings.length;
+  const ariaLabel = `Claude Code context: ${totalStr} of ${windowStr} tokens used by ${sourceCount} always-on source${sourceCount === 1 ? '' : 's'}; ${findingsCount} finding${findingsCount === 1 ? '' : 's'}`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX_W} ${VIEWBOX_H}" role="img" aria-label="${escape(ariaLabel)}">
   <defs>

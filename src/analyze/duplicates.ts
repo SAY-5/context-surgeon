@@ -32,7 +32,7 @@ export interface ParagraphRef {
 
 const MIN_PARAGRAPH_CHARS = 60;
 const DUPLICATE_THRESHOLD = 0.85;
-const CANDIDATE_MIN = 0.55;
+const CANDIDATE_MIN = 0.6;
 
 export function detectDuplicates(resolved: ResolvedFile[]): {
   duplicates: DuplicateFinding[];
