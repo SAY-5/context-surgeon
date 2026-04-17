@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { discover } from '../discovery/walker.js';
 import { parseFile } from '../parser/frontmatter.js';
 import { resolveImports } from '../imports/resolver.js';
@@ -9,11 +9,20 @@ import { count, formatCount, modeBadge, preferredMode } from '../tokens/index.js
 import { compose } from '../report/compose.js';
 import { renderTerminal } from '../render/terminal.js';
 import { renderSVG } from '../render/svg.js';
-import { writeFile } from 'node:fs/promises';
+import { renderPNG, HERO_SIZE } from '../render/png.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgJsonPath = join(here, '..', '..', 'package.json');
 const pkg = JSON.parse(await readFile(pkgJsonPath, 'utf8')) as { version: string };
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${(n / 1024 / 1024).toFixed(2)}MB`;
+}
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -82,6 +91,8 @@ export async function main(argv: string[]): Promise<number> {
     .description('audit what Claude Code loads for <dir>')
     .option('--json', 'emit the Report as JSON instead of rendering')
     .option('--svg [path]', 'emit the hero SVG; no path = stdout, path = file')
+    .option('--png <path>', 'emit the hero PNG rasterized from the SVG (path required)')
+    .option('--out <dir>', 'write both .svg and .png into <dir>/ as context-surgeon-hero.*')
     .option('--include-home', 'include ~/.claude (off by default)', false)
     .option('--force-offline', 'force offline estimate even when ANTHROPIC_API_KEY is set', false)
     .option('--width <n>', 'terminal width for rendering (auto-detected by default)', v => Number(v))
@@ -90,13 +101,16 @@ export async function main(argv: string[]): Promise<number> {
       opts: {
         json?: boolean;
         svg?: boolean | string;
+        png?: string;
+        out?: string;
         includeHome?: boolean;
         forceOffline?: boolean;
         width?: number;
       },
     ) => {
-      if (opts.json && opts.svg !== undefined) {
-        throw new Error('--json and --svg are mutually exclusive; pick one output format');
+      const formats = [opts.json, opts.svg !== undefined, opts.png !== undefined, opts.out !== undefined].filter(Boolean).length;
+      if (formats > 1) {
+        throw new Error('--json, --svg, --png, and --out are mutually exclusive; pick one output format');
       }
       const sources = await discover(dir, { includeHome: opts.includeHome });
       const resolved = await Promise.all(
@@ -120,6 +134,28 @@ export async function main(argv: string[]): Promise<number> {
         } else {
           process.stdout.write(svg);
         }
+        return;
+      }
+      if (opts.png !== undefined) {
+        const png = await renderPNG(report, HERO_SIZE);
+        await writeFile(opts.png, png);
+        process.stderr.write(`wrote ${opts.png} (${formatBytes(png.length)})\n`);
+        return;
+      }
+      if (opts.out !== undefined) {
+        if (!existsSync(opts.out)) {
+          await mkdir(opts.out, { recursive: true });
+        } else if (!statSync(opts.out).isDirectory()) {
+          throw new Error(`--out path is not a directory: ${opts.out}`);
+        }
+        const svgPath = join(opts.out, 'context-surgeon-hero.svg');
+        const pngPath = join(opts.out, 'context-surgeon-hero.png');
+        const svg = renderSVG(report);
+        await writeFile(svgPath, svg, 'utf8');
+        const png = await renderPNG(report, HERO_SIZE);
+        await writeFile(pngPath, png);
+        process.stderr.write(`wrote ${svgPath}\n`);
+        process.stderr.write(`wrote ${pngPath} (${formatBytes(png.length)})\n`);
         return;
       }
       process.stdout.write(renderTerminal(report, { width: opts.width }));
