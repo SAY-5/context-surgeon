@@ -1,0 +1,77 @@
+import { Command } from 'commander';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { discover } from '../discovery/walker.js';
+import { parseFile } from '../parser/frontmatter.js';
+import { resolveImports } from '../imports/resolver.js';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const pkgJsonPath = join(here, '..', '..', 'package.json');
+const pkg = JSON.parse(await readFile(pkgJsonPath, 'utf8')) as { version: string };
+
+export async function main(argv: string[]): Promise<number> {
+  const program = new Command();
+  program
+    .name('context-surgeon')
+    .version(pkg.version)
+    .description('audit what Claude Code reads before you type')
+    .exitOverride();
+
+  program
+    .command('discover <dir>')
+    .description('list every context file Claude Code would load for <dir>')
+    .option('--json', 'emit JSON')
+    .option('--include-home', 'include ~/.claude (off by default for fixtures)', false)
+    .option('--include-managed', 'include OS-level managed CLAUDE.md', false)
+    .action(async (dir: string, opts: { json?: boolean; includeHome?: boolean; includeManaged?: boolean }) => {
+      const sources = await discover(dir, {
+        includeHome: opts.includeHome,
+        includeManaged: opts.includeManaged,
+      });
+      const resolved = await Promise.all(
+        sources.files.map(async f => resolveImports(parseFile(f))),
+      );
+      if (opts.json) {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              cwd: sources.cwd,
+              fileCount: resolved.length,
+              files: resolved.map(f => ({
+                path: f.path,
+                kind: f.kind,
+                scope: f.scope,
+                frontmatter: f.frontmatter,
+                bytes: f.effective.length,
+                imports: f.imports.map(i => ({ path: i.path, depth: i.depth, ref: i.ref })),
+              })),
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+      } else {
+        process.stdout.write(`${resolved.length} file(s) discovered in ${sources.cwd}\n\n`);
+        for (const f of resolved) {
+          process.stdout.write(`  ${f.kind.padEnd(16)} ${f.path}\n`);
+          for (const imp of f.imports) {
+            const indent = '   ' + '  '.repeat(imp.depth);
+            process.stdout.write(`${indent}↪ ${imp.ref}  →  ${imp.path}\n`);
+          }
+        }
+        process.stdout.write('\n');
+      }
+    });
+
+  try {
+    await program.parseAsync(argv, { from: 'user' });
+    return 0;
+  } catch (err) {
+    const e = err as Error & { code?: string };
+    if (e.code === 'commander.help' || e.code === 'commander.version') return 0;
+    if (e.code === 'commander.helpDisplayed') return 0;
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+}
