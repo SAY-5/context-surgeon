@@ -17,8 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const pkgJsonPath = join(here, '..', '..', 'package.json');
 const pkg = JSON.parse(await readFile(pkgJsonPath, 'utf8')) as { version: string };
 
-// TODO(commit-12): replace with real repo URL before launch.
-const REPO_URL = 'https://github.com/<repo>/context-surgeon';
+const REPO_URL = 'https://github.com/SAY-5/context-surgeon';
 
 const HELP_TEXT = `\
 context-surgeon — Audit what Claude Code actually loads before you type.

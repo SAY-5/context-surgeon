@@ -1,5 +1,3 @@
-<!-- Repo URL appears below as https://github.com/<repo>/context-surgeon; find-replace at launch. -->
-
 # context-surgeon
 
 See what Claude Code actually loads into context before you type.

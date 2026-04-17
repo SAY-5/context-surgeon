@@ -19,4 +19,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inter and JetBrains Mono TTFs bundled under `assets/fonts/` so PNG output is pixel-identical across systems without the fonts installed.
 - Hero demo fixture at `examples/bloated/` — a realistic 593-line TypeScript-monorepo `CLAUDE.md` with overlapping rules, clip-bait skills, path-mismatch rules, and a seeded duplicate.
 
-[0.1.0]: https://github.com/<repo>/context-surgeon/releases/tag/v0.1.0
+[0.1.0]: https://github.com/SAY-5/context-surgeon/releases/tag/v0.1.0

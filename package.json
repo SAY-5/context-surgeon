@@ -2,6 +2,15 @@
   "name": "context-surgeon",
   "version": "0.1.0",
   "description": "Audit what Claude Code actually loads into context before you type.",
+  "homepage": "https://github.com/SAY-5/context-surgeon",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SAY-5/context-surgeon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SAY-5/context-surgeon/issues"
+  },
+  "author": "Sai Asish Y <say.apm35@gmail.com>",
   "keywords": [
     "claude",
     "claude-code",
