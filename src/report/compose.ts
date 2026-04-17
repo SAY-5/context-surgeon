@@ -1,6 +1,9 @@
 import { count } from '../tokens/index.js';
 import type { Mode } from '../tokens/index.js';
 import type { ResolvedFile, Scope, SourceKind } from '../types.js';
+import { analyze, type Finding, type ConflictClassifier } from '../analyze/index.js';
+
+export type { Finding };
 
 export type Bucket =
   | 'system'
@@ -21,15 +24,6 @@ export interface SourceCount {
   label: string;
 }
 
-export interface Finding {
-  kind: string;
-  severity: 'info' | 'warn' | 'critical';
-  summary: string;
-  path?: string;
-  evidence?: string;
-  tokenImpact?: number;
-}
-
 export interface Report {
   cwd: string;
   total: number;
@@ -47,6 +41,7 @@ export interface ComposeOpts {
   includeHome: boolean;
   contextWindow?: number;
   systemPromptTokens?: number;
+  conflictClassifier?: ConflictClassifier;
 }
 
 function shortLabel(path: string, cwd: string): string {
@@ -108,13 +103,19 @@ export async function compose(resolved: ResolvedFile[], opts: ComposeOpts): Prom
 
   const total = sources.reduce((s, x) => s + x.tokens, 0);
 
+  const findings = await analyze(resolved, {
+    cwd: opts.cwd,
+    mode: opts.mode,
+    conflictClassifier: opts.conflictClassifier,
+  });
+
   return {
     cwd: opts.cwd,
     total,
     contextWindow,
     mode: opts.mode,
     sources,
-    findings: [],
+    findings,
     includeHome: opts.includeHome,
     systemPromptTokens,
   };

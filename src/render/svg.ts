@@ -173,9 +173,9 @@ function renderFindings(report: Report): string {
   if (report.findings.length === 0) {
     return `    <text x="${BAR_X}" y="${FINDINGS_Y}" font-family="${FONT_INTER}" font-size="13" fill="${TEXT_MUTED}">[ ] no findings yet — analyzers ship in next commit batch.</text>`;
   }
-  const crit = report.findings.filter(f => f.severity === 'critical').length;
-  const warn = report.findings.filter(f => f.severity === 'warn').length;
-  return `    <text x="${BAR_X}" y="${FINDINGS_Y}" font-family="${FONT_INTER}" font-size="13" fill="#f87171">[!] ${crit} critical, ${warn} warning finding(s)</text>`;
+  const warn = report.findings.filter(f => f.severity === 'warning').length;
+  const info = report.findings.filter(f => f.severity === 'info').length;
+  return `    <text x="${BAR_X}" y="${FINDINGS_Y}" font-family="${FONT_INTER}" font-size="13" fill="#f87171">[!] ${warn} warning${warn === 1 ? '' : 's'}<tspan fill="${TEXT_SECONDARY}">, ${info} note${info === 1 ? '' : 's'}</tspan></text>`;
 }
 
 export function renderSVG(report: Report): string {

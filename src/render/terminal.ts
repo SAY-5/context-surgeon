@@ -99,13 +99,12 @@ export function renderTerminal(report: Report, opts: RenderOpts = {}): string {
   if (report.findings.length === 0) {
     lines.push(chalk.hex('#8b949e')(' [ ] no findings yet — analyzers ship in next commit batch.'));
   } else {
-    const crit = report.findings.filter(f => f.severity === 'critical').length;
-    const warn = report.findings.filter(f => f.severity === 'warn').length;
-    lines.push(chalk.hex('#f87171')(` [!] ${crit} critical, ${warn} warning finding(s)`));
-    for (const f of report.findings) {
-      const mark = f.severity === 'critical' ? chalk.hex('#f87171')('▸') : chalk.hex('#fbbf24')('▸');
-      lines.push(`   ${mark} ${f.summary}`);
-    }
+    const warn = report.findings.filter(f => f.severity === 'warning').length;
+    const info = report.findings.filter(f => f.severity === 'info').length;
+    lines.push(
+      chalk.hex('#f87171')(` [!] ${warn} warning${warn === 1 ? '' : 's'}`) +
+        chalk.hex('#8b949e')(`, ${info} note${info === 1 ? '' : 's'}`),
+    );
   }
   lines.push('');
 
